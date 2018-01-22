@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/healthimation/go-aws-config/src/awsconfig"
 	"github.com/turbine/migrate/driver"
 	"github.com/turbine/migrate/file"
 	"github.com/turbine/migrate/migrate"
@@ -22,6 +23,9 @@ var url = flag.String("url", "", "")
 var migrationsPath = flag.String("path", "", "")
 var version = flag.Bool("version", false, "Show migrate version")
 var transactionType = flag.String("txn", "PerFile", "")
+var environment = flag.String("env", "", "")
+var service = flag.String("service", "", "")
+var dbURLKey = flag.String("urlkey", "DB_URL", "")
 
 func main() {
 	flag.Parse()
@@ -40,6 +44,18 @@ func main() {
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
+	}
+
+	// check AWS parameter for db URL
+	if len(*url) == 0 && len(*environment) > 0 && len(*service) > 0 {
+		conf := awsconfig.NewAWSLoader(*environment, *service)
+		err := conf.Initialize()
+		if err != nil {
+			fmt.Println(err.Error())
+			os.Exit(1)
+		}
+		dbURL := conf.MustGetString(*dbURLKey)
+		url = &dbURL
 	}
 
 	switch command {
@@ -224,7 +240,7 @@ func printTimer() {
 
 func helpCmd() {
 	os.Stderr.WriteString(
-		`usage: migrate [-path=<path>] -url=<url> <command> [<args>]
+		`usage: migrate [-path=<path>] [-url=<url>] [-env=<environment> -service=<serviceName> [-urlkey=<urlkey>]] <command> [<args>]
 
 Commands:
    create <name>  Create a new migration
@@ -238,5 +254,8 @@ Commands:
    help           Show this help
 
 '-path' defaults to current working directory.
+'-url' or '-env' and '-service' are required.  
+If you provide '-env' and '-service' the app will look up the '-urlkey' in AWS parameter store as '/env/service/urlkey'
+'-urlkey' defaults to DB_URL
 `)
 }
