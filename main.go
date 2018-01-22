@@ -23,8 +23,8 @@ var url = flag.String("url", "", "")
 var migrationsPath = flag.String("path", "", "")
 var version = flag.Bool("version", false, "Show migrate version")
 var transactionType = flag.String("txn", "PerFile", "")
-var environment = flag.String("env", "", "")
-var service = flag.String("service", "", "")
+var environment = flag.String("env", "", "The environment you're running in")
+var service = flag.String("service", "", "The service's name (combined with env to form AWS parameter store key \"/env/service/urlkey\")")
 var dbURLKey = flag.String("urlkey", "DB_URL", "")
 
 func main() {
@@ -51,10 +51,15 @@ func main() {
 		conf := awsconfig.NewAWSLoader(*environment, *service)
 		err := conf.Initialize()
 		if err != nil {
-			fmt.Println(err.Error())
+			fmt.Printf("Could not pull AWS parameter store configuration: %s\n", err.Error())
 			os.Exit(1)
 		}
-		dbURL := conf.MustGetString(*dbURLKey)
+		dbURLby, err := conf.Get(*dbURLKey)
+		if err != nil || len(dbURLby) == 0 {
+			fmt.Printf("AWS parameter store key /%s/%s/%s was missing or not parsable\n", *environment, *service, *dbURLKey)
+			os.Exit(1)
+		}
+		dbURL := string(dbURLby)
 		url = &dbURL
 	}
 
@@ -256,6 +261,7 @@ Commands:
 '-path' defaults to current working directory.
 '-url' or '-env' and '-service' are required.  
 If you provide '-env' and '-service' the app will look up the '-urlkey' in AWS parameter store as '/env/service/urlkey'
+You will need to provide a standard AWS credential provider to use the '-env' and '-service' parameters.
 '-urlkey' defaults to DB_URL
 `)
 }
