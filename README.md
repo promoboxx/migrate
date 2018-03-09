@@ -70,6 +70,26 @@ migrate -url driver://url -path ./migrations goto 10
 migrate -url driver://url -path ./migrations goto v
 ```
 
+## Docker Container
+
+This repo (github.com/away-team) contains vendored dependencies and an automated Docker Hub build to allow usage on container orchestration platforms.
+
+- Inheret FROM awayteam/migrate, add your migration files, and deploy.
+```
+FROM awayteam/migrate
+ADD ./build/migration /migration
+```
+- Build migration container
+```bash
+docker build -t <registry>/<service>-migrate:<tag> .
+```
+
+- Run migrations
+```bash
+docker run <registry>/<service>-migrate:<tag> -url ...
+```
+
+
 
 ## Usage in Go
 
