@@ -19,6 +19,8 @@ import (
 	pipep "github.com/promoboxx/migrate/pipe"
 )
 
+const Version string = "1.2.0"
+
 var url = flag.String("url", "", "")
 var migrationsPath = flag.String("path", "", "")
 var version = flag.Bool("version", false, "Show migrate version")
