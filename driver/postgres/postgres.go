@@ -8,8 +8,8 @@ import (
 	"strconv"
 
 	"github.com/lib/pq"
-	"github.com/turbine/migrate/file"
-	"github.com/turbine/migrate/migrate/direction"
+	"github.com/promoboxx/go-migrate/file"
+	"github.com/promoboxx/go-migrate/migrate/direction"
 )
 
 type PerFileTxnDriver struct {

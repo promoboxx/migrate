@@ -8,11 +8,11 @@ import (
 	neturl "net/url"
 	"strings"
 
-	"github.com/turbine/migrate/driver/bash"
-	"github.com/turbine/migrate/driver/cassandra"
-	"github.com/turbine/migrate/driver/mysql" // alias to allow `url string` func signature in New
-	"github.com/turbine/migrate/driver/postgres"
-	"github.com/turbine/migrate/file"
+	"github.com/promoboxx/go-migrate/driver/bash"
+	"github.com/promoboxx/go-migrate/driver/cassandra"
+	"github.com/promoboxx/go-migrate/driver/mysql" // alias to allow `url string` func signature in New
+	"github.com/promoboxx/go-migrate/driver/postgres"
+	"github.com/promoboxx/go-migrate/file"
 )
 
 type TxnType int

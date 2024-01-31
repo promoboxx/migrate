@@ -1,6 +1,7 @@
 package awsconfig
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -12,12 +13,39 @@ import (
 	"github.com/divideandconquer/go-consul-client/src/config"
 )
 
+//type Loader interface {
+//	Import(data []byte) error
+//	Initialize() error
+//	Get(key string) ([]byte, error)
+//	Put(key string, value []byte) error
+//
+//	// Must functions will panic if they can't do what is requested.
+//	// They are maingly meant for use with configs that are required for an app to start up
+//	MustGetString(key string) string
+//	MustGetBool(key string) bool
+//	MustGetInt(key string) int
+//	MustGetDuration(key string) time.Duration
+//	//TODO add array support?
+//}
+
 // awsLoader satisfies the Loader interface in go-consul-client
 type awsLoader struct {
 	environment string
 	serviceName string
 	client      *ssm.SSM
 	config      map[string]string
+}
+
+// NewAWSLoader creates a Loader that will cache the provided namespace on initialization
+// and return data from that cache on Get
+func NewAWSLoaderWithSession(sess *session.Session, environment, serviceName string) config.Loader {
+	ret := &awsLoader{
+		environment: environment,
+		serviceName: serviceName,
+		config:      make(map[string]string),
+	}
+	ret.client = ssm.New(sess)
+	return ret
 }
 
 // NewAWSLoader creates a Loader that will cache the provided namespace on initialization
@@ -32,8 +60,34 @@ func NewAWSLoader(environment, serviceName string) config.Loader {
 	return ret
 }
 
-// Import does nothing for the aws loader
+// Import loads key values into parameter store at /env/serviceName/key
 func (a *awsLoader) Import(data []byte) error {
+	conf := make(map[string]*json.RawMessage)
+	err := json.Unmarshal(data, &conf)
+	if err != nil {
+		return fmt.Errorf("Unable to parse json data: %v", err)
+	}
+
+	for k, v := range conf {
+		if v != nil {
+			// strings will be wrapped in quotes; remove them.
+
+			value := *v
+			// Parameter store doesn't allow storing empty strings.  We store a space and it will be stripped during Initialize()
+			if string(value) == `""` {
+				value = json.RawMessage(`" "`)
+			}
+			if len(value) > 0 {
+				if value[0] == '"' && value[len(value)-1] == '"' {
+					value = value[1 : len(value)-1]
+				}
+			}
+			err = a.Put(k, value)
+			if err != nil {
+				return fmt.Errorf("Error writing key (%s) to parameter store: %v", k, err)
+			}
+		}
+	}
 	return nil
 }
 
@@ -90,6 +144,26 @@ func (a *awsLoader) pullConfigWithPrefix(prefix string, nextToken *string) (map[
 	}
 
 	return result, nil
+}
+
+// Put a value to a key
+func (a *awsLoader) Put(key string, value []byte) error {
+	fullKey := fmt.Sprintf("/%s/%s/%s", a.environment, a.serviceName, key)
+
+	putParamInput := &ssm.PutParameterInput{
+		Name:      aws.String(fullKey),
+		Type:      aws.String(ssm.ParameterTypeSecureString),
+		Value:     aws.String(string(value)),
+		Overwrite: aws.Bool(true),
+	}
+
+	// PutParamter returns the version number of the param, which is not useful
+	_, err := a.client.PutParameter(putParamInput)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Get fetches the raw config from the environment

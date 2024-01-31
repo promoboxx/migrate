@@ -12,11 +12,11 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/healthimation/go-aws-config/src/awsconfig"
-	"github.com/turbine/migrate/driver"
-	"github.com/turbine/migrate/file"
-	"github.com/turbine/migrate/migrate"
-	"github.com/turbine/migrate/migrate/direction"
-	pipep "github.com/turbine/migrate/pipe"
+	"github.com/promoboxx/go-migrate/driver"
+	"github.com/promoboxx/go-migrate/file"
+	"github.com/promoboxx/go-migrate/migrate"
+	"github.com/promoboxx/go-migrate/migrate/direction"
+	pipep "github.com/promoboxx/go-migrate/pipe"
 )
 
 var url = flag.String("url", "", "")

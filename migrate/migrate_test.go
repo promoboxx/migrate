@@ -4,7 +4,7 @@ import (
 	"io/ioutil"
 	"testing"
 
-	"github.com/turbine/migrate/driver"
+	"github.com/promoboxx/go-migrate/driver"
 )
 
 // Add Driver URLs here to test basic Up, Down, .. functions.

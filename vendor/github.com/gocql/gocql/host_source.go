@@ -1,6 +1,7 @@
 package gocql
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -9,6 +10,9 @@ import (
 	"sync"
 	"time"
 )
+
+var ErrCannotFindHost = errors.New("cannot find host")
+var ErrHostAlreadyExists = errors.New("host already exists")
 
 type nodeState int32
 
@@ -73,14 +77,23 @@ func (c *cassVersion) unmarshal(data []byte) error {
 }
 
 func (c cassVersion) Before(major, minor, patch int) bool {
-	if c.Major > major {
+	// We're comparing us (cassVersion) with the provided version (major, minor, patch)
+	// We return true if our version is lower (comes before) than the provided one.
+	if c.Major < major {
 		return true
-	} else if c.Minor > minor {
-		return true
-	} else if c.Patch > patch {
-		return true
+	} else if c.Major == major {
+		if c.Minor < minor {
+			return true
+		} else if c.Minor == minor && c.Patch < patch {
+			return true
+		}
+
 	}
 	return false
+}
+
+func (c cassVersion) AtLeast(major, minor, patch int) bool {
+	return !c.Before(major, minor, patch)
 }
 
 func (c cassVersion) String() string {
@@ -100,6 +113,7 @@ type HostInfo struct {
 	// TODO(zariel): reduce locking maybe, not all values will change, but to ensure
 	// that we are thread safe use a mutex to access all fields.
 	mu               sync.RWMutex
+	hostname         string
 	peer             net.IP
 	broadcastAddress net.IP
 	listenAddress    net.IP
@@ -117,6 +131,7 @@ type HostInfo struct {
 	clusterName      string
 	version          cassVersion
 	state            nodeState
+	schemaVersion    string
 	tokens           []string
 }
 
@@ -133,13 +148,6 @@ func (h *HostInfo) Peer() net.IP {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.peer
-}
-
-func (h *HostInfo) setPeer(peer net.IP) *HostInfo {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.peer = peer
-	return h
 }
 
 func (h *HostInfo) invalidConnectAddr() bool {
@@ -167,6 +175,22 @@ func (h *HostInfo) connectAddressLocked() (net.IP, string) {
 		return h.peer, "peer"
 	}
 	return net.IPv4zero, "invalid"
+}
+
+// nodeToNodeAddress returns address broadcasted between node to nodes.
+// It's either `broadcast_address` if host info is read from system.local or `peer` if read from system.peers.
+// This IP address is also part of CQL Event emitted on topology/status changes,
+// but does not uniquely identify the node in case multiple nodes use the same IP address.
+func (h *HostInfo) nodeToNodeAddress() net.IP {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	if validIpAddr(h.broadcastAddress) {
+		return h.broadcastAddress
+	} else if validIpAddr(h.peer) {
+		return h.peer
+	}
+	return net.IPv4zero
 }
 
 // Returns the address that should be used to connect to the host.
@@ -216,28 +240,16 @@ func (h *HostInfo) PreferredIP() net.IP {
 
 func (h *HostInfo) DataCenter() string {
 	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return h.dataCenter
-}
-
-func (h *HostInfo) setDataCenter(dataCenter string) *HostInfo {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.dataCenter = dataCenter
-	return h
+	dc := h.dataCenter
+	h.mu.RUnlock()
+	return dc
 }
 
 func (h *HostInfo) Rack() string {
 	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return h.rack
-}
-
-func (h *HostInfo) setRack(rack string) *HostInfo {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.rack = rack
-	return h
+	rack := h.rack
+	h.mu.RUnlock()
+	return rack
 }
 
 func (h *HostInfo) HostID() string {
@@ -246,11 +258,10 @@ func (h *HostInfo) HostID() string {
 	return h.hostId
 }
 
-func (h *HostInfo) setHostID(hostID string) *HostInfo {
+func (h *HostInfo) SetHostID(hostID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.hostId = hostID
-	return h
 }
 
 func (h *HostInfo) WorkLoad() string {
@@ -289,13 +300,6 @@ func (h *HostInfo) Version() cassVersion {
 	return h.version
 }
 
-func (h *HostInfo) setVersion(major, minor, patch int) *HostInfo {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.version = cassVersion{major, minor, patch}
-	return h
-}
-
 func (h *HostInfo) State() nodeState {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -315,24 +319,10 @@ func (h *HostInfo) Tokens() []string {
 	return h.tokens
 }
 
-func (h *HostInfo) setTokens(tokens []string) *HostInfo {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.tokens = tokens
-	return h
-}
-
 func (h *HostInfo) Port() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.port
-}
-
-func (h *HostInfo) setPort(port int) *HostInfo {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.port = port
-	return h
 }
 
 func (h *HostInfo) update(from *HostInfo) {
@@ -401,15 +391,32 @@ func (h *HostInfo) IsUp() bool {
 	return h != nil && h.State() == NodeUp
 }
 
+func (h *HostInfo) HostnameAndPort() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.hostname == "" {
+		addr, _ := h.connectAddressLocked()
+		h.hostname = addr.String()
+	}
+	return net.JoinHostPort(h.hostname, strconv.Itoa(h.port))
+}
+
+func (h *HostInfo) ConnectAddressAndPort() string {
+        h.mu.Lock()
+        defer h.mu.Unlock()
+        addr, _ := h.connectAddressLocked()
+        return net.JoinHostPort(addr.String(), strconv.Itoa(h.port))
+}
+
 func (h *HostInfo) String() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
 	connectAddr, source := h.connectAddressLocked()
-	return fmt.Sprintf("[HostInfo connectAddress=%q peer=%q rpc_address=%q broadcast_address=%q "+
+	return fmt.Sprintf("[HostInfo hostname=%q connectAddress=%q peer=%q rpc_address=%q broadcast_address=%q "+
 		"preferred_ip=%q connect_addr=%q connect_addr_source=%q "+
 		"port=%d data_centre=%q rack=%q host_id=%q version=%q state=%s num_tokens=%d]",
-		h.connectAddress, h.peer, h.rpcAddress, h.broadcastAddress, h.preferredIP,
+		h.hostname, h.connectAddress, h.peer, h.rpcAddress, h.broadcastAddress, h.preferredIP,
 		connectAddr, source,
 		h.port, h.dataCenter, h.rack, h.hostId, h.version, h.state, len(h.tokens))
 }
@@ -427,7 +434,7 @@ func checkSystemSchema(control *controlConn) (bool, error) {
 	iter := control.query("SELECT * FROM system_schema.keyspaces")
 	if err := iter.err; err != nil {
 		if errf, ok := err.(*errorFrame); ok {
-			if errf.code == errSyntax {
+			if errf.code == ErrCodeSyntax {
 				return false, nil
 			}
 		}
@@ -440,15 +447,11 @@ func checkSystemSchema(control *controlConn) (bool, error) {
 
 // Given a map that represents a row from either system.local or system.peers
 // return as much information as we can in *HostInfo
-func (s *Session) hostInfoFromMap(row map[string]interface{}, port int) (*HostInfo, error) {
+func (s *Session) hostInfoFromMap(row map[string]interface{}, host *HostInfo) (*HostInfo, error) {
 	const assertErrorMsg = "Assertion failed for %s"
 	var ok bool
 
 	// Default to our connected port if the cluster doesn't have port information
-	host := HostInfo{
-		port: port,
-	}
-
 	for key, value := range row {
 		switch key {
 		case "data_center":
@@ -507,12 +510,24 @@ func (s *Session) hostInfoFromMap(row map[string]interface{}, port int) (*HostIn
 				return nil, fmt.Errorf(assertErrorMsg, "rpc_address")
 			}
 			host.rpcAddress = net.ParseIP(ip)
+		case "native_address":
+			ip, ok := value.(string)
+			if !ok {
+				return nil, fmt.Errorf(assertErrorMsg, "native_address")
+			}
+			host.rpcAddress = net.ParseIP(ip)
 		case "listen_address":
 			ip, ok := value.(string)
 			if !ok {
 				return nil, fmt.Errorf(assertErrorMsg, "listen_address")
 			}
 			host.listenAddress = net.ParseIP(ip)
+		case "native_port":
+			native_port, ok := value.(int)
+			if !ok {
+				return nil, fmt.Errorf(assertErrorMsg, "native_port")
+			}
+			host.port = native_port
 		case "workload":
 			host.workload, ok = value.(string)
 			if !ok {
@@ -533,6 +548,12 @@ func (s *Session) hostInfoFromMap(row map[string]interface{}, port int) (*HostIn
 			if !ok {
 				return nil, fmt.Errorf(assertErrorMsg, "dse_version")
 			}
+		case "schema_version":
+			schemaVersion, ok := value.(UUID)
+			if !ok {
+				return nil, fmt.Errorf(assertErrorMsg, "schema_version")
+			}
+			host.schemaVersion = schemaVersion.String()
 		}
 		// TODO(thrawn01): Add 'port'? once CASSANDRA-7544 is complete
 		// Not sure what the port field will be called until the JIRA issue is complete
@@ -542,15 +563,57 @@ func (s *Session) hostInfoFromMap(row map[string]interface{}, port int) (*HostIn
 	host.connectAddress = ip
 	host.port = port
 
-	return &host, nil
+	return host, nil
+}
+
+func (s *Session) hostInfoFromIter(iter *Iter, connectAddress net.IP, defaultPort int) (*HostInfo, error) {
+	rows, err := iter.SliceMap()
+	if err != nil {
+		// TODO(zariel): make typed error
+		return nil, err
+	}
+
+	if len(rows) == 0 {
+		return nil, errors.New("query returned 0 rows")
+	}
+
+	host, err := s.hostInfoFromMap(rows[0], &HostInfo{connectAddress: connectAddress, port: defaultPort})
+	if err != nil {
+		return nil, err
+	}
+	return host, nil
+}
+
+// Ask the control node for the local host info
+func (r *ringDescriber) getLocalHostInfo() (*HostInfo, error) {
+	if r.session.control == nil {
+		return nil, errNoControl
+	}
+
+	iter := r.session.control.withConnHost(func(ch *connHost) *Iter {
+		return ch.conn.querySystemLocal(context.TODO())
+	})
+
+	if iter == nil {
+		return nil, errNoControl
+	}
+
+	host, err := r.session.hostInfoFromIter(iter, nil, r.session.cfg.Port)
+	if err != nil {
+		return nil, fmt.Errorf("could not retrieve local host info: %w", err)
+	}
+	return host, nil
 }
 
 // Ask the control node for host info on all it's known peers
-func (r *ringDescriber) getClusterPeerInfo() ([]*HostInfo, error) {
-	var hosts []*HostInfo
+func (r *ringDescriber) getClusterPeerInfo(localHost *HostInfo) ([]*HostInfo, error) {
+	if r.session.control == nil {
+		return nil, errNoControl
+	}
+
+	var peers []*HostInfo
 	iter := r.session.control.withConnHost(func(ch *connHost) *Iter {
-		hosts = append(hosts, ch.host)
-		return ch.conn.query("SELECT * FROM system.peers")
+		return ch.conn.querySystemPeers(context.TODO(), localHost.version)
 	})
 
 	if iter == nil {
@@ -565,20 +628,20 @@ func (r *ringDescriber) getClusterPeerInfo() ([]*HostInfo, error) {
 
 	for _, row := range rows {
 		// extract all available info about the peer
-		host, err := r.session.hostInfoFromMap(row, r.session.cfg.Port)
+		host, err := r.session.hostInfoFromMap(row, &HostInfo{port: r.session.cfg.Port})
 		if err != nil {
 			return nil, err
 		} else if !isValidPeer(host) {
 			// If it's not a valid peer
-			Logger.Printf("Found invalid peer '%s' "+
+			r.session.logger.Printf("Found invalid peer '%s' "+
 				"Likely due to a gossip or snitch issue, this host will be ignored", host)
 			continue
 		}
 
-		hosts = append(hosts, host)
+		peers = append(peers, host)
 	}
 
-	return hosts, nil
+	return peers, nil
 }
 
 // Return true if the host is a valid peer
@@ -590,16 +653,22 @@ func isValidPeer(host *HostInfo) bool {
 		len(host.tokens) == 0)
 }
 
-// Return a list of hosts the cluster knows about
+// GetHosts returns a list of hosts found via queries to system.local and system.peers
 func (r *ringDescriber) GetHosts() ([]*HostInfo, string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	hosts, err := r.getClusterPeerInfo()
+	localHost, err := r.getLocalHostInfo()
 	if err != nil {
 		return r.prevHosts, r.prevPartitioner, err
 	}
 
+	peerHosts, err := r.getClusterPeerInfo(localHost)
+	if err != nil {
+		return r.prevHosts, r.prevPartitioner, err
+	}
+
+	hosts := append([]*HostInfo{localHost}, peerHosts...)
 	var partitioner string
 	if len(hosts) > 0 {
 		partitioner = hosts[0].Partitioner()
@@ -608,55 +677,22 @@ func (r *ringDescriber) GetHosts() ([]*HostInfo, string, error) {
 	return hosts, partitioner, nil
 }
 
-// Given an ip/port return HostInfo for the specified ip/port
-func (r *ringDescriber) getHostInfo(ip net.IP, port int) (*HostInfo, error) {
-	var host *HostInfo
-	iter := r.session.control.withConnHost(func(ch *connHost) *Iter {
-		if ch.host.ConnectAddress().Equal(ip) {
-			host = ch.host
-			return nil
-		}
-
-		return ch.conn.query("SELECT * FROM system.peers")
-	})
-
-	if iter != nil {
-		rows, err := iter.SliceMap()
-		if err != nil {
-			return nil, err
-		}
-
-		for _, row := range rows {
-			h, err := r.session.hostInfoFromMap(row, port)
-			if err != nil {
-				return nil, err
-			}
-
-			if h.ConnectAddress().Equal(ip) {
-				host = h
-				break
-			}
-		}
-
-		if host == nil {
-			return nil, errors.New("host not found in peers table")
-		}
-	}
-
-	if host == nil {
-		return nil, errors.New("unable to fetch host info: invalid control connection")
-	} else if host.invalidConnectAddr() {
-		return nil, fmt.Errorf("host ConnectAddress invalid ip=%v: %v", ip, host)
-	}
-
-	return host, nil
+// debounceRingRefresh submits a ring refresh request to the ring refresh debouncer.
+func (s *Session) debounceRingRefresh() {
+	s.ringRefresher.debounce()
 }
 
-func (r *ringDescriber) refreshRing() error {
-	// if we have 0 hosts this will return the previous list of hosts to
-	// attempt to reconnect to the cluster otherwise we would never find
-	// downed hosts again, could possibly have an optimisation to only
-	// try to add new hosts if GetHosts didnt error and the hosts didnt change.
+// refreshRing executes a ring refresh immediately and cancels pending debounce ring refresh requests.
+func (s *Session) refreshRing() error {
+	err, ok := <-s.ringRefresher.refreshNow()
+	if !ok {
+		return errors.New("could not refresh ring because stop was requested")
+	}
+
+	return err
+}
+
+func refreshRing(r *ringDescriber) error {
 	hosts, partitioner, err := r.GetHosts()
 	if err != nil {
 		return err
@@ -664,24 +700,37 @@ func (r *ringDescriber) refreshRing() error {
 
 	prevHosts := r.session.ring.currentHosts()
 
-	// TODO: move this to session
 	for _, h := range hosts {
-		if filter := r.session.cfg.HostFilter; filter != nil && !filter.Accept(h) {
+		if r.session.cfg.filterHost(h) {
 			continue
 		}
 
 		if host, ok := r.session.ring.addHostIfMissing(h); !ok {
-			r.session.pool.addHost(h)
-			r.session.policy.AddHost(h)
+			r.session.startPoolFill(h)
 		} else {
-			host.update(h)
+			// host (by hostID) already exists; determine if IP has changed
+			newHostID := h.HostID()
+			existing, ok := prevHosts[newHostID]
+			if !ok {
+				return fmt.Errorf("get existing host=%s from prevHosts: %w", h, ErrCannotFindHost)
+			}
+			if h.connectAddress.Equal(existing.connectAddress) && h.nodeToNodeAddress().Equal(existing.nodeToNodeAddress()) {
+				// no host IP change
+				host.update(h)
+			} else {
+				// host IP has changed
+				// remove old HostInfo (w/old IP)
+				r.session.removeHost(existing)
+				if _, alreadyExists := r.session.ring.addHostIfMissing(h); alreadyExists {
+					return fmt.Errorf("add new host=%s after removal: %w", h, ErrHostAlreadyExists)
+				}
+				// add new HostInfo (same hostID, new IP)
+				r.session.startPoolFill(h)
+			}
 		}
-		delete(prevHosts, h.ConnectAddress().String())
+		delete(prevHosts, h.HostID())
 	}
 
-	// TODO(zariel): it may be worth having a mutex covering the overall ring state
-	// in a session so that everything sees a consistent state. Becuase as is today
-	// events can come in and due to ordering an UP host could be removed from the cluster
 	for _, host := range prevHosts {
 		r.session.removeHost(host)
 	}
@@ -689,4 +738,162 @@ func (r *ringDescriber) refreshRing() error {
 	r.session.metadata.setPartitioner(partitioner)
 	r.session.policy.SetPartitioner(partitioner)
 	return nil
+}
+
+const (
+	ringRefreshDebounceTime = 1 * time.Second
+)
+
+// debounces requests to call a refresh function (currently used for ring refresh). It also supports triggering a refresh immediately.
+type refreshDebouncer struct {
+	mu           sync.Mutex
+	stopped      bool
+	broadcaster  *errorBroadcaster
+	interval     time.Duration
+	timer        *time.Timer
+	refreshNowCh chan struct{}
+	quit         chan struct{}
+	refreshFn    func() error
+}
+
+func newRefreshDebouncer(interval time.Duration, refreshFn func() error) *refreshDebouncer {
+	d := &refreshDebouncer{
+		stopped:      false,
+		broadcaster:  nil,
+		refreshNowCh: make(chan struct{}, 1),
+		quit:         make(chan struct{}),
+		interval:     interval,
+		timer:        time.NewTimer(interval),
+		refreshFn:    refreshFn,
+	}
+	d.timer.Stop()
+	go d.flusher()
+	return d
+}
+
+// debounces a request to call the refresh function
+func (d *refreshDebouncer) debounce() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.stopped {
+		return
+	}
+	d.timer.Reset(d.interval)
+}
+
+// requests an immediate refresh which will cancel pending refresh requests
+func (d *refreshDebouncer) refreshNow() <-chan error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.broadcaster == nil {
+		d.broadcaster = newErrorBroadcaster()
+		select {
+		case d.refreshNowCh <- struct{}{}:
+		default:
+			// already a refresh pending
+		}
+	}
+	return d.broadcaster.newListener()
+}
+
+func (d *refreshDebouncer) flusher() {
+	for {
+		select {
+		case <-d.refreshNowCh:
+		case <-d.timer.C:
+		case <-d.quit:
+		}
+		d.mu.Lock()
+		if d.stopped {
+			if d.broadcaster != nil {
+				d.broadcaster.stop()
+				d.broadcaster = nil
+			}
+			d.timer.Stop()
+			d.mu.Unlock()
+			return
+		}
+
+		// make sure both request channels are cleared before we refresh
+		select {
+		case <-d.refreshNowCh:
+		default:
+		}
+
+		d.timer.Stop()
+		select {
+		case <-d.timer.C:
+		default:
+		}
+
+		curBroadcaster := d.broadcaster
+		d.broadcaster = nil
+		d.mu.Unlock()
+
+		err := d.refreshFn()
+		if curBroadcaster != nil {
+			curBroadcaster.broadcast(err)
+		}
+	}
+}
+
+func (d *refreshDebouncer) stop() {
+	d.mu.Lock()
+	if d.stopped {
+		d.mu.Unlock()
+		return
+	}
+	d.stopped = true
+	d.mu.Unlock()
+	d.quit <- struct{}{} // sync with flusher
+	close(d.quit)
+}
+
+// broadcasts an error to multiple channels (listeners)
+type errorBroadcaster struct {
+	listeners []chan<- error
+	mu        sync.Mutex
+}
+
+func newErrorBroadcaster() *errorBroadcaster {
+	return &errorBroadcaster{
+		listeners: nil,
+		mu:        sync.Mutex{},
+	}
+}
+
+func (b *errorBroadcaster) newListener() <-chan error {
+	ch := make(chan error, 1)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.listeners = append(b.listeners, ch)
+	return ch
+}
+
+func (b *errorBroadcaster) broadcast(err error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	curListeners := b.listeners
+	if len(curListeners) > 0 {
+		b.listeners = nil
+	} else {
+		return
+	}
+
+	for _, listener := range curListeners {
+		listener <- err
+		close(listener)
+	}
+}
+
+func (b *errorBroadcaster) stop() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.listeners) == 0 {
+		return
+	}
+	for _, listener := range b.listeners {
+		close(listener)
+	}
+	b.listeners = nil
 }

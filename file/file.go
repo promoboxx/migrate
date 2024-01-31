@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/turbine/migrate/migrate/direction"
+	"github.com/promoboxx/go-migrate/migrate/direction"
 )
 
 var filenameRegex = `^([0-9]+)_(.*)\.((?:always)?up|(?:always)?down)\.%s$`
@@ -114,12 +114,12 @@ func (mf *MigrationFiles) ToLastFrom(version uint64) (Files, error) {
 // From travels relatively through migration files.  It will include the set
 // of always run files.  The always run files do not count as a version.
 //
-// 		+1 will fetch the next up migration file
-// 		+2 will fetch the next two up migration files
-// 		+n will fetch ...
-// 		-1 will fetch the the previous down migration file
-// 		-2 will fetch the next two previous down migration files
-//		-n will fetch ...
+//	+1 will fetch the next up migration file
+//	+2 will fetch the next two up migration files
+//	+n will fetch ...
+//	-1 will fetch the the previous down migration file
+//	-2 will fetch the next two previous down migration files
+//	-n will fetch ...
 func (mf *MigrationFiles) From(version uint64, relativeN int) (Files, error) {
 	var d direction.Direction
 	if relativeN > 0 {

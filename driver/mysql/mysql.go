@@ -12,8 +12,8 @@ import (
 	"strings"
 
 	"github.com/go-sql-driver/mysql"
-	"github.com/turbine/migrate/file"
-	"github.com/turbine/migrate/migrate/direction"
+	"github.com/promoboxx/go-migrate/file"
+	"github.com/promoboxx/go-migrate/migrate/direction"
 )
 
 type Driver struct {
