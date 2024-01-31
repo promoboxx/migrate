@@ -47,8 +47,8 @@ github.com/divideandconquer/go-consul-client/src/config
 # github.com/fatih/color v1.16.0
 ## explicit; go 1.17
 github.com/fatih/color
-# github.com/go-sql-driver/mysql v1.7.1
-## explicit; go 1.13
+# github.com/go-sql-driver/mysql v1.2.1-0.20161020111133-dbc3fe23a4ac
+## explicit
 github.com/go-sql-driver/mysql
 # github.com/gocql/gocql v1.6.0
 ## explicit; go 1.13

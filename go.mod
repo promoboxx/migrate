@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	github.com/fatih/color v1.16.0
-	github.com/go-sql-driver/mysql v1.7.1
+	github.com/go-sql-driver/mysql v1.2.1-0.20161020111133-dbc3fe23a4ac
 	github.com/gocql/gocql v1.6.0
 	github.com/healthimation/go-aws-config v0.0.0-20220508090657-1cc45644ff20
 	github.com/lib/pq v1.10.9

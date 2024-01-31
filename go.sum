@@ -11,8 +11,8 @@ github.com/divideandconquer/go-consul-client v0.0.0-20210610174817-6146efeb9f54/
 github.com/divideandconquer/go-merge v0.0.0-20150616173453-dc9048d04b65/go.mod h1:Y+Et20MYTm/6Do72xZ3niVupcTZXTnsj0Y663IpuUkA=
 github.com/fatih/color v1.16.0 h1:zmkK9Ngbjj+K0yRhTVONQh1p/HknKYSlNT+vZCzyokM=
 github.com/fatih/color v1.16.0/go.mod h1:fL2Sau1YI5c0pdGEVCbKQbLXB6edEj1ZgiY4NijnWvE=
-github.com/go-sql-driver/mysql v1.7.1 h1:lUIinVbN1DY0xBg0eMOzmmtGoHwWBbvnWubQUrtU8EI=
-github.com/go-sql-driver/mysql v1.7.1/go.mod h1:OXbVy3sEdcQ2Doequ6Z5BW6fXNQTmx+9S1MCJN5yJMI=
+github.com/go-sql-driver/mysql v1.2.1-0.20161020111133-dbc3fe23a4ac h1:NoE4JArdyiMpDu8yhYqwK3MWXsYj7nMi3XWVRavthHM=
+github.com/go-sql-driver/mysql v1.2.1-0.20161020111133-dbc3fe23a4ac/go.mod h1:zAC/RDZ24gD3HViQzih4MyKcchzm+sOG5ZlKdlhCg5w=
 github.com/gocql/gocql v1.6.0 h1:IdFdOTbnpbd0pDhl4REKQDM+Q0SzKXQ1Yh+YZZ8T/qU=
 github.com/gocql/gocql v1.6.0/go.mod h1:3gM2c4D3AnkISwBxGnMMsS8Oy4y2lhbPRsH4xnJrHG8=
 github.com/golang/mock v1.5.0/go.mod h1:CWnOUgYIOo4TcNZ0wHX3YZCqsaM1I1Jvs6v3mP3KVu8=
