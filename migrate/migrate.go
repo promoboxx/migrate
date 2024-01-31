@@ -11,10 +11,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/promoboxx/go-migrate/driver"
-	"github.com/promoboxx/go-migrate/file"
-	"github.com/promoboxx/go-migrate/migrate/direction"
-	pipep "github.com/promoboxx/go-migrate/pipe"
+	"github.com/promoboxx/migrate/driver"
+	"github.com/promoboxx/migrate/file"
+	"github.com/promoboxx/migrate/migrate/direction"
+	pipep "github.com/promoboxx/migrate/pipe"
 )
 
 // Up applies all available migrations

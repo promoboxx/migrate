@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/gocql/gocql"
-	"github.com/promoboxx/go-migrate/file"
-	"github.com/promoboxx/go-migrate/migrate/direction"
+	"github.com/promoboxx/migrate/file"
+	"github.com/promoboxx/migrate/migrate/direction"
 )
 
 type Driver struct {

@@ -2,8 +2,8 @@
 package bash
 
 import (
-	"github.com/promoboxx/go-migrate/file"
-	_ "github.com/promoboxx/go-migrate/migrate/direction"
+	"github.com/promoboxx/migrate/file"
+	_ "github.com/promoboxx/migrate/migrate/direction"
 )
 
 type Driver struct {

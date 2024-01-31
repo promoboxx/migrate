@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/promoboxx/go-migrate/migrate/direction"
+	"github.com/promoboxx/migrate/migrate/direction"
 )
 
 var filenameRegex = `^([0-9]+)_(.*)\.((?:always)?up|(?:always)?down)\.%s$`

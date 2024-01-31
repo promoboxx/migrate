@@ -1,7 +1,7 @@
-FROM golang:1.11 as builder
-COPY . /go/src/github.com/away-team/migrate
-WORKDIR /go/src/github.com/away-team/migrate
-RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags "-s" -installsuffix cgo -o bin/migrate *.go
+FROM pbxx/go-docker-base:master-latest as builder
+COPY . /go/src/github.com/promoboxx/migrate
+WORKDIR /go/src/github.com/promoboxx/migrate
+RUN CGO_ENABLED=0 GOOS=linux go build -mod vendor -a -ldflags "-s" -installsuffix cgo -o bin/migrate *.go
 
 FROM alpine:latest
 

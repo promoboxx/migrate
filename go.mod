@@ -1,4 +1,4 @@
-module github.com/promoboxx/go-migrate
+module github.com/promoboxx/migrate
 
 go 1.19
 

@@ -1,0 +1,75 @@
+version: 2.1
+
+orbs:
+  code-quality: promoboxx/code-quality@0.0.11
+  testing: promoboxx/testing@0.0.11
+
+jobs:
+  build:
+    docker:
+      - image: pbxx/go-docker-base:master-latest
+        auth:
+          username: $DOCKER_LOGIN
+          password: $DOCKER_PASSWORD
+    working_directory: /go/src/github.com/promoboxx/migrate
+    steps:
+      - checkout
+      - run:
+          name: build go-migrate
+          command: |
+            go build -mod vendor main.go
+  build_and_push:
+    docker:
+      - image: docker:stable-git
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run: |
+          docker login -u "$DOCKER_LOGIN" -p "$DOCKER_PASSWORD"
+          docker build -t pbxx/${CIRCLE_PROJECT_REPONAME}:${CIRCLE_SHA1} .
+          docker tag pbxx/${CIRCLE_PROJECT_REPONAME}:${CIRCLE_SHA1} pbxx/${CIRCLE_PROJECT_REPONAME}:${CIRCLE_BRANCH}-latest
+          docker push pbxx/${CIRCLE_PROJECT_REPONAME}:${CIRCLE_SHA1}
+          docker push pbxx/${CIRCLE_PROJECT_REPONAME}:${CIRCLE_BRANCH}-latest
+
+workflows:
+  version: 2.1
+  build_and_publish_docker_image:
+    jobs:
+      - build:
+          context: "dockerhub"
+      - code-quality/go-lint:
+          context: "dockerhub"
+          service_name: go-migrate
+          filters:
+            branches:
+              ignore: master
+      - code-quality/go-fmt:
+          context: "dockerhub"
+          service_name: go-migrate
+          filters:
+            branches:
+              ignore: master
+      - code-quality/go-vet:
+          context: 
+            - "golang"
+            - "dockerhub"
+          service_name: go-migrate
+          filters:
+            branches:
+              ignore: master
+      - testing/test:
+          context: 
+            - "golang"
+            - "dockerhub"
+          filters:
+            branches:
+              ignore: master
+      - build_and_push:
+          context: "dockerhub"
+          requires:
+            - build
+            - code-quality/go-lint
+            - code-quality/go-vet
+            - code-quality/go-fmt
+            - testing/test
+     
