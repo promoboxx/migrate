@@ -10,5 +10,5 @@ RUN apk update && \
     rm -rf /var/cache/apk/*
 
 WORKDIR /
-COPY --from=builder /go/src/github.com/away-team/migrate/bin/migrate .
+COPY --from=builder /go/src/github.com/promoboxx/migrate/bin/migrate .
 ENTRYPOINT ["/migrate"]
