@@ -51,5 +51,4 @@ workflows:
           context: "dockerhub"
           requires:
             - build
-            - testing/test
      
