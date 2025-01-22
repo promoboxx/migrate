@@ -20,17 +20,27 @@ jobs:
             go build -mod vendor main.go
   build_and_push:
     docker:
-      - image: docker:stable-git
+      - image: cimg/base:stable
     steps:
       - checkout
       - setup_remote_docker
-      - run: |
-          docker login -u "$DOCKER_LOGIN" -p "$DOCKER_PASSWORD"
-          docker build -t pbxx/${CIRCLE_PROJECT_REPONAME}:${CIRCLE_SHA1} .
-          docker tag pbxx/${CIRCLE_PROJECT_REPONAME}:${CIRCLE_SHA1} pbxx/${CIRCLE_PROJECT_REPONAME}:${CIRCLE_BRANCH}-latest
-          docker push pbxx/${CIRCLE_PROJECT_REPONAME}:${CIRCLE_SHA1}
-          docker push pbxx/${CIRCLE_PROJECT_REPONAME}:${CIRCLE_BRANCH}-latest
-
+      - run:
+          name: Login to DockerHub
+          command: docker login -u "$DOCKER_LOGIN" -p "$DOCKER_PASSWORD"
+      - run:
+          name: Create and use buildx builder
+          command: |
+            docker buildx create --name multiarch --use
+            docker buildx inspect --bootstrap
+      - run:
+          name: Build and push multi-arch image
+          command: |
+            docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              --tag pbxx/${CIRCLE_PROJECT_REPONAME}:${CIRCLE_SHA1} \
+              --tag pbxx/${CIRCLE_PROJECT_REPONAME}:${CIRCLE_BRANCH}-latest \
+              --push \
+              .
 workflows:
   version: 2.1
   build_and_publish_docker_image:
