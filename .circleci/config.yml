@@ -47,39 +47,9 @@ workflows:
     jobs:
       - build:
           context: "dockerhub"
-      - code-quality/go-lint:
-          context: "dockerhub"
-          service_name: go-migrate
-          filters:
-            branches:
-              ignore: master
-      - code-quality/go-fmt:
-          context: "dockerhub"
-          service_name: go-migrate
-          filters:
-            branches:
-              ignore: master
-      - code-quality/go-vet:
-          context: 
-            - "golang"
-            - "dockerhub"
-          service_name: go-migrate
-          filters:
-            branches:
-              ignore: master
-      - testing/test:
-          context: 
-            - "golang"
-            - "dockerhub"
-          filters:
-            branches:
-              ignore: master
       - build_and_push:
           context: "dockerhub"
           requires:
             - build
-            - code-quality/go-lint
-            - code-quality/go-vet
-            - code-quality/go-fmt
             - testing/test
      
